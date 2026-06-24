@@ -1,13 +1,9 @@
 import { Router } from "express";
 import { User } from "../models/User.js";
+import { requireRole, verifyToken } from "../middleware/auth.js";
 
 const router = Router();
-
-/**
- * GET /api/users
- * Returns all users for the admin Manage Users table.
- * Sorted newest-first. Pagination/search happens on the frontend.
- */
+router.use(verifyToken, requireRole("admin"));
 router.get("/", async (req, res) => {
     try {
         const users = await User.find(
@@ -17,7 +13,6 @@ router.get("/", async (req, res) => {
             .sort({ createdAt: -1 })
             .lean();
 
-        // Map _id → id so the frontend stays storage-agnostic.
         res.json(users.map((u) => ({ ...u, id: u._id, _id: undefined })));
     } catch (err) {
         console.error("GET /api/users failed:", err);
@@ -25,10 +20,6 @@ router.get("/", async (req, res) => {
     }
 });
 
-/**
- * PATCH /api/users/:id/status
- * Body: { status: "active" | "blocked" }
- */
 router.patch("/:id/status", async (req, res) => {
     try {
         const { status } = req.body;
@@ -48,10 +39,7 @@ router.patch("/:id/status", async (req, res) => {
     }
 });
 
-/**
- * PATCH /api/users/:id/role
- * Body: { role: "member" | "trainer" | "admin" }
- */
+
 router.patch("/:id/role", async (req, res) => {
     try {
         const { role } = req.body;

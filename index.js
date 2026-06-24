@@ -3,15 +3,16 @@ import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
 import userRoutes from "./routes/Users.js";
+import trainerRoutes from "./routes/trainer-applications.js"
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-app.get("/health", (_req, res) => res.json({ ok: true }));
 
 app.use("/api/users", userRoutes);
+app.use("/api/trainer-applications", trainerRoutes);
 
 const PORT = process.env.PORT || 5000;
 
