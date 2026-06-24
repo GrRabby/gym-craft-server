@@ -4,7 +4,7 @@ import cors from "cors";
 import mongoose from "mongoose";
 import userRoutes from "./routes/Users.js";
 import trainerRoutes from "./routes/trainer-applications.js"
-
+import classRoutes from "./routes/classes.js";
 const app = express();
 
 app.use(cors());
@@ -13,7 +13,7 @@ app.use(express.json());
 
 app.use("/api/users", userRoutes);
 app.use("/api/trainer-applications", trainerRoutes);
-
+app.use("/api/classes", classRoutes);
 const PORT = process.env.PORT || 5000;
 
 mongoose
