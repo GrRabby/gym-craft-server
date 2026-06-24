@@ -2,7 +2,14 @@ import mongoose from "mongoose";
 
 const trainerApplicationSchema = new mongoose.Schema(
     {
-        userId:     { type: String, required: true, index: true, unique: true },
+        // ObjectId so $lookup against the user collection works without casting.
+        userId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "user",
+            required: true,
+            index: true,
+            unique: true,
+        },
         experience: { type: Number, required: true, min: 0, max: 60 },
         specialty:  {
             type: String,

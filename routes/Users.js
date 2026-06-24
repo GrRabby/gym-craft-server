@@ -1,13 +1,17 @@
 import { Router } from "express";
 import { User } from "../models/User.js";
 import { requireRole, verifyToken } from "../middleware/auth.js";
-
+import { TrainerApplication } from "../models/TrainerApplication.js";
 const router = Router();
 router.use(verifyToken, requireRole("admin"));
 router.get("/", async (req, res) => {
     try {
+        const filter = {};
+        if (req.query.role && ["member", "trainer", "admin"].includes(req.query.role)) {
+            filter.role = req.query.role;
+        }
         const users = await User.find(
-            {},
+            filter,
             { name: 1, email: 1, role: 1, status: 1, image: 1, createdAt: 1 }
         )
             .sort({ createdAt: -1 })
@@ -46,12 +50,25 @@ router.patch("/:id/role", async (req, res) => {
         if (!["member", "trainer", "admin"].includes(role)) {
             return res.status(400).json({ ok: false, error: "Invalid role" });
         }
+
+        // We need the previous role to know whether this is a trainer-demote
+        const existing = await User.findById(req.params.id).lean();
+        if (!existing) return res.status(404).json({ ok: false, error: "User not found" });
+
+        const previousRole = existing.role;
+
         const updated = await User.findByIdAndUpdate(
             req.params.id,
             { role, updatedAt: new Date() },
             { new: true }
         ).lean();
-        if (!updated) return res.status(404).json({ ok: false, error: "User not found" });
+
+        // If we just demoted a trainer back to member, clear their old approved
+        // application so they can reapply from scratch.
+        if (previousRole === "trainer" && role === "member") {
+            await TrainerApplication.deleteOne({ userId: req.params.id });
+        }
+
         res.json({ ok: true, user: { ...updated, id: updated._id, _id: undefined } });
     } catch (err) {
         console.error("PATCH /api/users/:id/role failed:", err);
