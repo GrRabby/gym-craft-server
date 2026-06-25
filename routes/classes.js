@@ -206,4 +206,49 @@ router.delete("/:id", verifyToken, requireRole("admin"), async (req, res) => {
     }
 });
  
+router.get("/public", async (req, res) => {
+    try {
+        const classes = await GymClass.aggregate([
+            { $match: { status: "approved" } },
+            { $lookup: {
+                from: "user",
+                localField: "trainerId",
+                foreignField: "_id",
+                as: "trainer",
+            }},
+            { $unwind: "$trainer" },
+            { $project: {
+                title: 1, description: 1, image: 1,
+                category: 1, difficulty: 1,
+                duration: 1, price: 1,
+                scheduleDays: 1, scheduleTime: 1,
+                createdAt: 1,
+                "trainer._id": 1, "trainer.name": 1, "trainer.image": 1,
+            }},
+            { $sort: { createdAt: -1 } },
+        ]);
+ 
+        res.json(classes.map((c) => ({
+            id:           String(c._id),
+            title:        c.title,
+            description:  c.description,
+            image:        c.image,
+            category:     c.category,
+            difficulty:   c.difficulty,
+            duration:     c.duration,
+            price:        c.price,
+            scheduleDays: c.scheduleDays,
+            scheduleTime: c.scheduleTime,
+            createdAt:    c.createdAt,
+            trainer: {
+                id:    String(c.trainer._id),
+                name:  c.trainer.name,
+                image: c.trainer.image,
+            },
+        })));
+    } catch (err) {
+        console.error("GET /api/classes/public failed:", err);
+        res.status(500).json({ ok: false, error: "Failed to load classes" });
+    }
+});
 export default router;
