@@ -7,6 +7,7 @@ import trainerRoutes from "./routes/trainer-applications.js"
 import classRoutes from "./routes/classes.js";
 import favoritesRouter from "./routes/favorites.js";
 import checkoutRouter from "./routes/checkout.js"
+import bookingsRouter from "./routes/bookings.js";
 const app = express();
 
 app.use(cors());
@@ -18,6 +19,7 @@ app.use("/api/trainer-applications", trainerRoutes);
 app.use("/api/classes", classRoutes);
 app.use("/api/favorites", favoritesRouter);
 app.use("/api/checkout", checkoutRouter);
+app.use("/api/bookings", bookingsRouter);
 const PORT = process.env.PORT || 5000;
 
 mongoose
