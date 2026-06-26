@@ -7,7 +7,8 @@ import {
 } from "../models/GymClasses.js";
 import { verifyToken, requireRole, requireActiveUser } from "../middleware/auth.js";
 import mongoose from "mongoose";
-
+import { Favorite } from "../models/Favorite.js";
+import { Booking } from "../models/Booking.js";
 const router = Router();
 const STATUSES = ["pending", "approved", "rejected"];
 /**
@@ -208,8 +209,113 @@ router.delete("/:id", verifyToken, requireRole("admin"), async (req, res) => {
  
 router.get("/public", async (req, res) => {
     try {
-        const classes = await GymClass.aggregate([
-            { $match: { status: "approved" } },
+        // ---------- Pagination ----------
+        const page  = Math.max(1, parseInt(req.query.page)  || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 9));
+        const skip  = (page - 1) * limit;
+ 
+        // ---------- Filter clause ----------
+        const match = { status: "approved" };
+ 
+        // $in — accept comma-separated categories: ?category=yoga,strength
+        const raw = String(req.query.category || "").trim();
+        const categories = raw
+            .split(",")
+            .map((c) => c.trim().toLowerCase())
+            .filter((c) => c && CLASS_CATEGORIES.includes(c));
+ 
+        if (categories.length > 0) {
+            match.category = { $in: categories };
+        }
+ 
+        // $regex — case-insensitive substring on title
+        const search = String(req.query.search || "").trim();
+        if (search) {
+            // Escape regex specials so user input can't break the query
+            const safe = search.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+            match.title = { $regex: safe, $options: "i" };
+        }
+ 
+        // ---------- Query + count in parallel ----------
+        const [classes, total] = await Promise.all([
+            GymClass.aggregate([
+                { $match: match },
+                { $lookup: {
+                    from: "user",
+                    localField: "trainerId",
+                    foreignField: "_id",
+                    as: "trainer",
+                }},
+                { $unwind: "$trainer" },
+                { $project: {
+                    title: 1, description: 1, image: 1,
+                    category: 1, difficulty: 1,
+                    duration: 1, price: 1,
+                    scheduleDays: 1, scheduleTime: 1,
+                    createdAt: 1,
+                    "trainer._id": 1, "trainer.name": 1, "trainer.image": 1,
+                }},
+                { $sort: { createdAt: -1 } },
+                { $skip: skip },
+                { $limit: limit },
+            ]),
+            GymClass.countDocuments(match),
+        ]);
+ 
+        res.json({
+            classes: classes.map((c) => ({
+                id:           String(c._id),
+                title:        c.title,
+                description:  c.description,
+                image:        c.image,
+                category:     c.category,
+                difficulty:   c.difficulty,
+                duration:     c.duration,
+                price:        c.price,
+                scheduleDays: c.scheduleDays,
+                scheduleTime: c.scheduleTime,
+                createdAt:    c.createdAt,
+                trainer: {
+                    id:    String(c.trainer._id),
+                    name:  c.trainer.name,
+                    image: c.trainer.image,
+                },
+            })),
+            page,
+            limit,
+            total,
+            totalPages: Math.max(1, Math.ceil(total / limit)),
+        });
+    } catch (err) {
+        console.error("GET /api/classes/public failed:", err);
+        res.status(500).json({ ok: false, error: "Failed to load classes" });
+    }
+});
+/**
+ * GET /api/classes/:id
+ *
+ * Auth-gated. Returns:
+ *   - Full class detail (with trainer joined)
+ *   - isBooked   — whether the current user has a paid/pending booking
+ *   - isFavorited — whether the current user has favorited this class
+ *
+ * Single round trip so the details page doesn't flicker as separate
+ * checks resolve.
+ */
+router.get("/:id", verifyToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+ 
+        if (!mongoose.isValidObjectId(id)) {
+            return res.status(400).json({ ok: false, error: "Invalid class ID" });
+        }
+ 
+        // Class + trainer in one aggregate
+        const result = await GymClass.aggregate([
+            { $match: {
+                _id: new mongoose.Types.ObjectId(id),
+                status: "approved",
+            }},
             { $lookup: {
                 from: "user",
                 localField: "trainerId",
@@ -217,38 +323,58 @@ router.get("/public", async (req, res) => {
                 as: "trainer",
             }},
             { $unwind: "$trainer" },
-            { $project: {
-                title: 1, description: 1, image: 1,
-                category: 1, difficulty: 1,
-                duration: 1, price: 1,
-                scheduleDays: 1, scheduleTime: 1,
-                createdAt: 1,
-                "trainer._id": 1, "trainer.name": 1, "trainer.image": 1,
-            }},
-            { $sort: { createdAt: -1 } },
+            { $limit: 1 },
         ]);
  
-        res.json(classes.map((c) => ({
-            id:           String(c._id),
-            title:        c.title,
-            description:  c.description,
-            image:        c.image,
-            category:     c.category,
-            difficulty:   c.difficulty,
-            duration:     c.duration,
-            price:        c.price,
-            scheduleDays: c.scheduleDays,
-            scheduleTime: c.scheduleTime,
-            createdAt:    c.createdAt,
-            trainer: {
-                id:    String(c.trainer._id),
-                name:  c.trainer.name,
-                image: c.trainer.image,
+        if (result.length === 0) {
+            return res.status(404).json({ ok: false, error: "Class not found" });
+        }
+ 
+        const c = result[0];
+ 
+        // Booking + favorite checks in parallel
+        const userObjectId  = new mongoose.Types.ObjectId(req.user.id);
+        const classObjectId = new mongoose.Types.ObjectId(id);
+ 
+        const [bookedDoc, favoritedDoc] = await Promise.all([
+            Booking.exists({
+                userId:  userObjectId,
+                classId: classObjectId,
+                // Treat any non-cancelled booking as "booked" so a user
+                // mid-Stripe-flow doesn't see Book Now still active
+                status: { $in: ["paid", "pending"] },
+            }),
+            Favorite.exists({
+                userId:  userObjectId,
+                classId: classObjectId,
+            }),
+        ]);
+ 
+        return res.json({
+            class: {
+                id:           String(c._id),
+                title:        c.title,
+                description:  c.description,
+                image:        c.image,
+                category:     c.category,
+                difficulty:   c.difficulty,
+                duration:     c.duration,
+                price:        c.price,
+                scheduleDays: c.scheduleDays,
+                scheduleTime: c.scheduleTime,
+                createdAt:    c.createdAt,
+                trainer: {
+                    id:    String(c.trainer._id),
+                    name:  c.trainer.name,
+                    image: c.trainer.image,
+                },
             },
-        })));
+            isBooked:    !!bookedDoc,
+            isFavorited: !!favoritedDoc,
+        });
     } catch (err) {
-        console.error("GET /api/classes/public failed:", err);
-        res.status(500).json({ ok: false, error: "Failed to load classes" });
+        console.error("GET /api/classes/:id failed:", err);
+        return res.status(500).json({ ok: false, error: "Failed to load class" });
     }
 });
 export default router;
