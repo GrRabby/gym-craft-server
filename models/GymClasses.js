@@ -14,7 +14,7 @@ const gymClassSchema = new mongoose.Schema(
         difficulty: { type: String, required: true, enum: DIFFICULTIES },
 
         duration: { type: Number, required: true, min: 5,  max: 240 }, // minutes
-        price:    { type: Number, required: true, min: 0 },             // BDT or your currency
+        price:    { type: Number, required: true, min: 0 },         
 
         scheduleDays: { type: [{ type: String, enum: DAYS }], default: [] },
         scheduleTime: { type: String, default: null },                  // "HH:MM" 24-hour
