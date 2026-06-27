@@ -13,7 +13,7 @@ const ALLOWED_STATUSES    = ["pending", "approved", "rejected"];
  * Returns the current user's application (or null if none yet).
  * Open to any authenticated user — they need to see their own status.
  */
-router.get("/me", verifyToken, async (req, res) => {
+router.get("/me", verifyToken,requireRole("member"), async (req, res) => {
     try {
         const app = await TrainerApplication.findOne({ userId: req.user.id }).lean();
         if (!app) return res.json({ application: null });

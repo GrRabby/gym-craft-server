@@ -10,6 +10,8 @@ import checkoutRouter from "./routes/checkout.js"
 import bookingsRouter from "./routes/bookings.js";
 import forumPostsRouter from "./routes/forum-posts.js";
 import adminRouter from "./routes/admin.js";
+import postVotesRouter from "./routes/post-votes.js";
+import commentsRouter from "./routes/comments.js";
 const app = express();
 
 app.use(cors());
@@ -24,6 +26,8 @@ app.use("/api/checkout", checkoutRouter);
 app.use("/api/bookings", bookingsRouter);
 app.use("/api/forum-posts", forumPostsRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/post-votes", postVotesRouter);
+app.use("/api/comments", commentsRouter);
 const PORT = process.env.PORT || 5000;
 
 mongoose

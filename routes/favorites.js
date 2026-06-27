@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 
 import { Favorite } from "../models/Favorite.js";
 
-import { verifyToken, requireActiveUser } from "../middleware/auth.js";
+import { verifyToken, requireActiveUser, requireRole } from "../middleware/auth.js";
 import { GymClass } from "../models/GymClasses.js";
 
 const router = express.Router();
@@ -77,7 +77,7 @@ router.delete("/:classId", requireActiveUser, async (req, res) => {
  * Approved-only — if a class is later unapproved or deleted, it silently
  * disappears from the user's list.
  */
-router.get("/me", async (req, res) => {
+router.get("/me",requireRole('member'), async (req, res) => {
     try {
         const userObjectId = new mongoose.Types.ObjectId(req.user.id);
 

@@ -5,8 +5,6 @@ import { Booking } from "../models/Booking.js";
 import { verifyToken, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
-
-// Admin-only for everything in this router
 router.use(verifyToken, requireRole("admin"));
 router.get("/stats", async (req, res) => {
     try {

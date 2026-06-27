@@ -21,7 +21,6 @@ const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
 export async function verifyToken(req, res, next) {
     const header = req.headers.authorization || "";
     const token = header.startsWith("Bearer ") ? header.slice(7) : null;
-
     if (!token) {
         return res.status(401).json({ ok: false, error: "Not authenticated" });
     }

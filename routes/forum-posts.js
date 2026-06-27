@@ -7,11 +7,131 @@ import {
     requireRole,
     requireActiveUser,
 } from "../middleware/auth.js";
+import { PostVote } from "../models/PostVote.js";
+import { Comment } from "../models/Comment.js";
 
 const router = express.Router();
 
-router.use(verifyToken);
 
+router.get("/public", async (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 12));
+        const skip = (page - 1) * limit;
+        const [posts, total] = await Promise.all([
+            ForumPost.aggregate([
+                { $match: { status: "published" } },
+                { $sort: { createdAt: -1 } },
+                { $skip: skip },
+                { $limit: limit },
+                {
+                    $lookup: {
+                        from: "user",
+                        localField: "authorId",
+                        foreignField: "_id",
+                        as: "author",
+                    }
+                },
+                { $unwind: "$author" },
+                {
+                    $project: {
+                        title: 1,
+                        description: 1,
+                        image: 1,
+                        createdAt: 1,
+                        "author._id": 1,
+                        "author.name": 1,
+                        "author.image": 1,
+                        "author.role": 1,
+                    }
+                },
+            ]),
+            ForumPost.countDocuments({ status: "published" }),
+        ]);
+
+        return res.json({
+            posts: posts.map((p) => ({
+                id: String(p._id),
+                title: p.title,
+                description: p.description,
+                image: p.image,
+                createdAt: p.createdAt,
+                author: {
+                    id: String(p.author._id),
+                    name: p.author.name,
+                    image: p.author.image,
+                    role: p.author.role,
+                },
+            })),
+            page,
+            limit,
+            total,
+            totalPages: Math.max(1, Math.ceil(total / limit)),
+        });
+    } catch (err) {
+        console.error("GET /api/forum-posts/public failed:", err);
+        return res.status(500).json({ ok: false, error: "Failed to load posts" });
+    }
+});
+router.get("/:id", verifyToken, requireActiveUser, async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!mongoose.isValidObjectId(id)) {
+            return res.status(400).json({ ok: false, error: "Invalid post ID" });
+        }
+
+        const postId = new mongoose.Types.ObjectId(id);
+        const userId = new mongoose.Types.ObjectId(req.user.id);
+
+        const [postArr, likes, dislikes, userVote, commentCount] = await Promise.all([
+            ForumPost.aggregate([
+                { $match: { _id: postId, status: "published" } },
+                {
+                    $lookup: {
+                        from: "user",
+                        localField: "authorId",
+                        foreignField: "_id",
+                        as: "author",
+                    }
+                },
+                { $unwind: "$author" },
+                { $limit: 1 },
+            ]),
+            PostVote.countDocuments({ postId, type: "like" }),
+            PostVote.countDocuments({ postId, type: "dislike" }),
+            PostVote.findOne({ postId, userId }),
+            Comment.countDocuments({ postId }),
+        ]);
+
+        if (!postArr.length) {
+            return res.status(404).json({ ok: false, error: "Post not found" });
+        }
+
+        const post = postArr[0];
+        return res.json({
+            post: {
+                id: String(post._id),
+                title: post.title,
+                description: post.description,
+                image: post.image,
+                createdAt: post.createdAt,
+                author: {
+                    id: String(post.author._id),
+                    name: post.author.name,
+                    image: post.author.image,
+                    role: post.author.role,
+                },
+            },
+            likes,
+            dislikes,
+            userVote: userVote?.type || null,
+            commentCount,
+        });
+    } catch (err) {
+        console.error("GET /api/forum-posts/:id failed:", err);
+        return res.status(500).json({ ok: false, error: "Failed to load post" });
+    }
+});
 /**
  * POST /api/forum-posts
  * Body: { title, description, image }
@@ -21,13 +141,13 @@ router.use(verifyToken);
  * accept the resulting public URL here. Keeps Imgbb credentials off the
  * Express server entirely.
  */
-router.post("/", requireRole("trainer", "admin"), requireActiveUser, async (req, res) => {
+router.post("/", verifyToken,requireRole("trainer", "admin"), requireActiveUser, async (req, res) => {
     try {
         const { title, description, image } = req.body || {};
 
         // Server-side guards — never trust the client
         const cleanTitle = String(title || "").trim();
-        const cleanDesc  = String(description || "").trim();
+        const cleanDesc = String(description || "").trim();
         const cleanImage = String(image || "").trim();
 
         if (!cleanTitle) {
@@ -47,20 +167,20 @@ router.post("/", requireRole("trainer", "admin"), requireActiveUser, async (req,
         }
 
         const post = await ForumPost.create({
-            title:       cleanTitle,
+            title: cleanTitle,
             description: cleanDesc,
-            image:       cleanImage,
-            authorId:    new mongoose.Types.ObjectId(req.user.id),
+            image: cleanImage,
+            authorId: new mongoose.Types.ObjectId(req.user.id),
         });
 
         return res.status(201).json({
             ok: true,
             post: {
-                id:          String(post._id),
-                title:       post.title,
+                id: String(post._id),
+                title: post.title,
                 description: post.description,
-                image:       post.image,
-                createdAt:   post.createdAt,
+                image: post.image,
+                createdAt: post.createdAt,
             },
         });
     } catch (err) {
@@ -68,24 +188,24 @@ router.post("/", requireRole("trainer", "admin"), requireActiveUser, async (req,
         return res.status(500).json({ ok: false, error: "Failed to create post" });
     }
 });
-router.get("/me", requireActiveUser, async (req, res) => {
+router.get("/me", verifyToken, requireRole("trainer"), requireActiveUser, async (req, res) => {
     try {
         const userObjectId = new mongoose.Types.ObjectId(req.user.id);
- 
+
         const posts = await ForumPost
             .find({ authorId: userObjectId })
             .sort({ createdAt: -1 })
             .lean();
- 
+
         return res.json({
             posts: posts.map((p) => ({
-                id:          String(p._id),
-                title:       p.title,
+                id: String(p._id),
+                title: p.title,
                 description: p.description,
-                image:       p.image,
-                status:      p.status,
-                createdAt:   p.createdAt,
-                updatedAt:   p.updatedAt,
+                image: p.image,
+                status: p.status,
+                createdAt: p.createdAt,
+                updatedAt: p.updatedAt,
             })),
         });
     } catch (err) {
@@ -93,26 +213,26 @@ router.get("/me", requireActiveUser, async (req, res) => {
         return res.status(500).json({ ok: false, error: "Failed to load posts" });
     }
 });
-router.delete("/:id", requireActiveUser, async (req, res) => {
+router.delete("/:id", verifyToken, requireActiveUser, async (req, res) => {
     try {
         const { id } = req.params;
- 
+
         if (!mongoose.isValidObjectId(id)) {
             return res.status(400).json({ ok: false, error: "Invalid post ID" });
         }
- 
+
         const post = await ForumPost.findById(id);
         if (!post) {
             return res.status(404).json({ ok: false, error: "Post not found" });
         }
- 
+
         // Authorization: owner OR admin
         const isOwner = String(post.authorId) === req.user.id;
         const isAdmin = req.user.role === "admin";
         if (!isOwner && !isAdmin) {
             return res.status(403).json({ ok: false, error: "Not authorized to delete this post" });
         }
- 
+
         await ForumPost.deleteOne({ _id: id });
         return res.json({ ok: true });
     } catch (err) {
@@ -120,45 +240,49 @@ router.delete("/:id", requireActiveUser, async (req, res) => {
         return res.status(500).json({ ok: false, error: "Failed to delete post" });
     }
 });
-router.get("/", requireRole("admin"), async (req, res) => {
+router.get("/", verifyToken , requireRole("admin"), async (req, res) => {
     try {
         const posts = await ForumPost.aggregate([
             { $sort: { createdAt: -1 } },
-            { $lookup: {
-                from: "user",
-                localField: "authorId",
-                foreignField: "_id",
-                as: "author",
-            }},
+            {
+                $lookup: {
+                    from: "user",
+                    localField: "authorId",
+                    foreignField: "_id",
+                    as: "author",
+                }
+            },
             { $unwind: "$author" },
-            { $project: {
-                title: 1,
-                description: 1,
-                image: 1,
-                status: 1,
-                createdAt: 1,
-                "author._id":   1,
-                "author.name":  1,
-                "author.email": 1,
-                "author.image": 1,
-                "author.role":  1,
-            }},
+            {
+                $project: {
+                    title: 1,
+                    description: 1,
+                    image: 1,
+                    status: 1,
+                    createdAt: 1,
+                    "author._id": 1,
+                    "author.name": 1,
+                    "author.email": 1,
+                    "author.image": 1,
+                    "author.role": 1,
+                }
+            },
         ]);
- 
+
         return res.json({
             posts: posts.map((p) => ({
-                id:          String(p._id),
-                title:       p.title,
+                id: String(p._id),
+                title: p.title,
                 description: p.description,
-                image:       p.image,
-                status:      p.status,
-                createdAt:   p.createdAt,
+                image: p.image,
+                status: p.status,
+                createdAt: p.createdAt,
                 author: {
-                    id:    String(p.author._id),
-                    name:  p.author.name,
+                    id: String(p.author._id),
+                    name: p.author.name,
                     email: p.author.email,
                     image: p.author.image,
-                    role:  p.author.role,
+                    role: p.author.role,
                 },
             })),
         });
@@ -167,4 +291,6 @@ router.get("/", requireRole("admin"), async (req, res) => {
         return res.status(500).json({ ok: false, error: "Failed to load posts" });
     }
 });
+
+
 export default router;

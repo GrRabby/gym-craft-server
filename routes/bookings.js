@@ -19,7 +19,7 @@ router.use(verifyToken);
  * Aggregation rather than two queries to avoid N+1 — one DB round trip
  * returns everything the table needs.
  */
-router.get("/me", async (req, res) => {
+router.get("/me",requireRole("member"), async (req, res) => {
     try {
         const userObjectId = new mongoose.Types.ObjectId(req.user.id);
 
