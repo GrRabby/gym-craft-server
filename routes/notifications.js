@@ -8,12 +8,6 @@ const router = express.Router();
 
 router.use(verifyToken, requireActiveUser);
 
-/**
- * GET /api/notifications/me?limit=20
- *
- * Returns the user's recent notifications + their unread count.
- * Both come back in one trip so the bell badge stays in sync.
- */
 router.get("/me", async (req, res) => {
     try {
         const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
@@ -45,11 +39,6 @@ router.get("/me", async (req, res) => {
     }
 });
 
-/**
- * PATCH /api/notifications/:id/read
- *
- * Mark a single notification as read. Owner-only.
- */
 router.patch("/:id/read", async (req, res) => {
     try {
         const { id } = req.params;
@@ -77,11 +66,6 @@ router.patch("/:id/read", async (req, res) => {
     }
 });
 
-/**
- * PATCH /api/notifications/read-all
- *
- * Mark every unread notification as read for the current user.
- */
 router.patch("/read-all", async (req, res) => {
     try {
         const userId = new mongoose.Types.ObjectId(req.user.id);
@@ -96,11 +80,6 @@ router.patch("/read-all", async (req, res) => {
     }
 });
 
-/**
- * DELETE /api/notifications/:id
- *
- * Hard delete a notification. Owner-only.
- */
 router.delete("/:id", async (req, res) => {
     try {
         const { id } = req.params;

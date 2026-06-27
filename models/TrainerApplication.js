@@ -2,7 +2,6 @@ import mongoose from "mongoose";
 
 const trainerApplicationSchema = new mongoose.Schema(
     {
-        // ObjectId so $lookup against the user collection works without casting.
         userId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "user",
@@ -23,7 +22,7 @@ const trainerApplicationSchema = new mongoose.Schema(
             index: true,
         },
         rejectionReason: { type: String, default: null },
-        reviewedBy:      { type: String, default: null },   // admin user id
+        reviewedBy:      { type: String, default: null },
         reviewedAt:      { type: Date,   default: null },
     },
     { timestamps: true, collection: "trainer_applications" }

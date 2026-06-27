@@ -24,15 +24,10 @@ router.get("/stats", async (req, res) => {
             GymClass.countDocuments({}),
             Booking.countDocuments({ status: "paid" }),
 
-            // Users grouped by role
             User.aggregate([
                 { $group: { _id: "$role", count: { $sum: 1 } } },
             ]),
 
-            // Paid bookings per day for the last 30 days. Mongo's
-            // $dateToString gives stable YYYY-MM-DD keys we can sort.
-            // Days with no bookings won't appear — that's intentional;
-            // the chart shows actual activity, not synthetic zeros.
             Booking.aggregate([
                 {
                     $match: {
@@ -49,7 +44,6 @@ router.get("/stats", async (req, res) => {
                 { $sort: { _id: 1 } },
             ]),
 
-            // Bookings joined to classes, grouped by category
             Booking.aggregate([
                 { $match: { status: "paid" } },
                 {

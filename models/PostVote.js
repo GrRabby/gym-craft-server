@@ -22,8 +22,6 @@ const postVoteSchema = new mongoose.Schema(
     { timestamps: true, collection: "post_votes" }
 );
 
-// One vote per user per post — DB-level guarantee.
-// Switching like→dislike updates the same row; the API never creates dupes.
 postVoteSchema.index({ postId: 1, userId: 1 }, { unique: true });
 
 export const PostVote =

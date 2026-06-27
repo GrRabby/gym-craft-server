@@ -13,11 +13,11 @@ const gymClassSchema = new mongoose.Schema(
         category:   { type: String, required: true, enum: CATEGORIES },
         difficulty: { type: String, required: true, enum: DIFFICULTIES },
 
-        duration: { type: Number, required: true, min: 5,  max: 240 }, // minutes
+        duration: { type: Number, required: true, min: 5,  max: 240 },
         price:    { type: Number, required: true, min: 0 },         
 
         scheduleDays: { type: [{ type: String, enum: DAYS }], default: [] },
-        scheduleTime: { type: String, default: null },                  // "HH:MM" 24-hour
+        scheduleTime: { type: String, default: null },
 
         trainerId: {
             type: mongoose.Schema.Types.ObjectId,
@@ -26,7 +26,6 @@ const gymClassSchema = new mongoose.Schema(
             index: true,
         },
 
-        // Approval workflow — same shape as TrainerApplication for consistency
         status:   {
             type: String,
             enum: ["pending", "approved", "rejected"],
@@ -43,7 +42,6 @@ const gymClassSchema = new mongoose.Schema(
 export const GymClass =
     mongoose.models.GymClass || mongoose.model("GymClass", gymClassSchema);
 
-// Re-export the enums so routes can validate against the same source of truth
 export const CLASS_CATEGORIES   = CATEGORIES;
 export const CLASS_DIFFICULTIES = DIFFICULTIES;
 export const CLASS_DAYS         = DAYS;

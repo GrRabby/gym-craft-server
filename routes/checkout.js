@@ -12,14 +12,6 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 router.use(verifyToken);
 
-/**
- * POST /api/checkout/session
- * Body: { classId }
- *
- * Pricing model: cls.price is stored as USD dollars. Stripe expects the
- * smallest currency unit (cents for USD), so we multiply by 100 here.
- * A class priced 50 in the DB is a $50.00 Stripe charge.
- */
 router.post("/session", requireActiveUser, async (req, res) => {
     try {
         const { classId } = req.body || {};
@@ -33,7 +25,6 @@ router.post("/session", requireActiveUser, async (req, res) => {
             return res.status(404).json({ ok: false, error: "Class not found" });
         }
 
-        // Double-booking guard
         const existing = await Booking.findOne({
             userId: req.user.id,
             classId,
@@ -48,17 +39,13 @@ router.post("/session", requireActiveUser, async (req, res) => {
 
         const trainer = await User.findById(cls.trainerId).select("name").lean();
 
-        // Harden the line-item data so Stripe always has something
-        // valid to render in its summary
         const safeName = String(cls.title || "GymCraft Class").trim().slice(0, 100);
         const safeDescription = `Coached by ${trainer?.name || "GymCraft Trainer"} · ${cls.duration} min`;
-        // Stripe only accepts HTTPS image URLs and silently drops invalid ones
         const safeImages =
             typeof cls.image === "string" && cls.image.startsWith("https://")
                 ? [cls.image]
                 : [];
 
-        // Treat cls.price as USD dollars; convert to cents for Stripe
         const unitAmountCents = Math.round(Number(cls.price) * 100);
 
         const session = await stripe.checkout.sessions.create({
@@ -100,12 +87,6 @@ router.post("/session", requireActiveUser, async (req, res) => {
     }
 });
 
-/**
- * GET /api/checkout/session-status/:sessionId
- *
- * Called by the success page. Verifies the session with Stripe and
- * idempotently writes the Booking. Safe to call multiple times.
- */
 router.get("/session-status/:sessionId", async (req, res) => {
     try {
         const { sessionId } = req.params;

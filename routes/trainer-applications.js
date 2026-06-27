@@ -9,11 +9,7 @@ const router = Router();
 
 const ALLOWED_SPECIALTIES = ["strength", "cardio", "hiit", "yoga", "pilates", "mobility"];
 const ALLOWED_STATUSES = ["pending", "approved", "rejected"];
-/**
- * GET /api/trainer-applications/me
- * Returns the current user's application (or null if none yet).
- * Open to any authenticated user — they need to see their own status.
- */
+
 router.get("/me", verifyToken, requireRole("member"), async (req, res) => {
     try {
         const app = await TrainerApplication.findOne({ userId: req.user.id }).lean();
@@ -25,15 +21,6 @@ router.get("/me", verifyToken, requireRole("member"), async (req, res) => {
     }
 });
 
-/**
- * POST /api/trainer-applications
- * Body: { experience: number, specialty: string }
- *
- * Members only. Active only (soft-block excludes them).
- * - If no existing application → creates one with status: "pending"
- * - If existing is "rejected"  → updates back to "pending" with new values
- * - If existing is "pending" or "approved" → 409 (already on file)
- */
 router.post("/", verifyToken, requireRole("member"), requireActiveUser, async (req, res) => {
     try {
         const experience = Number(req.body.experience);
@@ -82,6 +69,7 @@ router.post("/", verifyToken, requireRole("member"), requireActiveUser, async (r
         res.status(500).json({ ok: false, error: "Failed to submit application." });
     }
 });
+
 router.get("/", verifyToken, requireRole("admin"), async (req, res) => {
     try {
         const status = ALLOWED_STATUSES.includes(req.query.status) ? req.query.status : "pending";
@@ -128,16 +116,7 @@ router.get("/", verifyToken, requireRole("admin"), async (req, res) => {
         res.status(500).json({ ok: false, error: "Failed to load applications" });
     }
 });
-/**
- * PATCH /api/trainer-applications/:id/approve
- * Body: { feedback?: string }
- *
- * Marks the application approved AND promotes the user to trainer.
- * Two writes — not transactional unless your Mongo is a replica set.
- * If the second write fails, the application is approved but the user is
- * still a member. Worth knowing for a class project; production code would
- * use a session/transaction here.
- */
+
 router.patch("/:id/approve", verifyToken, requireRole("admin"), async (req, res) => {
     try {
         if (!mongoose.isValidObjectId(req.params.id))
@@ -150,14 +129,13 @@ router.patch("/:id/approve", verifyToken, requireRole("admin"), async (req, res)
         if (app.status !== "pending")
             return res.status(409).json({ ok: false, error: `Already ${app.status}` });
 
-        // 1) Update application
         app.status = "approved";
         app.feedback = feedback;
         app.reviewedBy = req.user.id;
         app.reviewedAt = new Date();
         await app.save();
-        // 2) Promote user
-        const role = await User.findByIdAndUpdate(app.userId, { role: "trainer", updatedAt: new Date() });
+
+        await User.findByIdAndUpdate(app.userId, { role: "trainer", updatedAt: new Date() });
         const lean = app.toObject();
         await Notification.create({
             userId: app.userId,
@@ -175,12 +153,6 @@ router.patch("/:id/approve", verifyToken, requireRole("admin"), async (req, res)
     }
 });
 
-/**
- * PATCH /api/trainer-applications/:id/reject
- * Body: { feedback: string }   ← required
- *
- * Marks the application rejected, saves the feedback. User role unchanged.
- */
 router.patch("/:id/reject", verifyToken, requireRole("admin"), async (req, res) => {
     try {
         if (!mongoose.isValidObjectId(req.params.id))
@@ -216,4 +188,5 @@ router.patch("/:id/reject", verifyToken, requireRole("admin"), async (req, res) 
         res.status(500).json({ ok: false, error: "Failed to reject" });
     }
 });
+
 export default router;

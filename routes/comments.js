@@ -9,13 +9,6 @@ const router = express.Router();
 
 router.use(verifyToken, requireActiveUser);
 
-/**
- * GET /api/comments?postId=...
- *
- * Returns all comments for a post, joined to author info. Comments
- * are hard-deleted now, so no need to filter — anything in the DB
- * is real and visible.
- */
 router.get("/", async (req, res) => {
     try {
         const { postId } = req.query;
@@ -59,13 +52,6 @@ router.get("/", async (req, res) => {
     }
 });
 
-/**
- * POST /api/comments
- * Body: { postId, parentId?, content }
- *
- * Creates a comment. Replies-to-replies collapse to the original
- * top-level parent (one-level threading by design).
- */
 router.post("/", async (req, res) => {
     try {
         const { postId, parentId, content } = req.body || {};
@@ -137,12 +123,6 @@ router.post("/", async (req, res) => {
     }
 });
 
-/**
- * PATCH /api/comments/:id
- * Body: { content }
- *
- * Owner-only edit.
- */
 router.patch("/:id", async (req, res) => {
     try {
         const { id } = req.params;
@@ -178,15 +158,6 @@ router.patch("/:id", async (req, res) => {
     }
 });
 
-/**
- * DELETE /api/comments/:id
- *
- * Hard delete (owner-only). If the comment is top-level, cascade-deletes
- * all of its replies in the same atomic-ish operation.
- *
- * Returns the array of deleted IDs so the client can remove them from
- * its local state without a refetch.
- */
 router.delete("/:id", async (req, res) => {
     try {
         const { id } = req.params;
@@ -202,7 +173,6 @@ router.delete("/:id", async (req, res) => {
 
         const deletedIds = [String(comment._id)];
 
-        // Cascade — only top-level deletions remove their replies
         if (!comment.parentId) {
             const replies = await Comment.find({ parentId: comment._id })
                 .select("_id")

@@ -22,8 +22,6 @@ router.get("/public", async (req, res) => {
         const skip = (page - 1) * limit;
         const search = String(req.query.search || "").trim();
 
-        // Build the optional search-match stage. Without a search query,
-        // this stage is skipped entirely.
         const searchMatch = search
             ? {
                 $or: [
@@ -51,9 +49,6 @@ router.get("/public", async (req, res) => {
             pipeline.push({ $match: searchMatch });
         }
 
-        // $facet runs two sub-pipelines on the same input:
-        //   data — the page of results (sorted, paginated, projected)
-        //   meta — just the count
         pipeline.push({
             $facet: {
                 data: [
@@ -99,7 +94,7 @@ router.get("/public", async (req, res) => {
             limit,
             total,
             totalPages: Math.max(1, Math.ceil(total / limit)),
-            search,  // echo back so the client can confirm what was applied
+            search,
         });
     } catch (err) {
         console.error("GET /api/forum-posts/public failed:", err);
@@ -189,20 +184,10 @@ router.get("/:id", verifyToken, requireActiveUser, async (req, res) => {
         return res.status(500).json({ ok: false, error: "Failed to load post" });
     }
 });
-/**
- * POST /api/forum-posts
- * Body: { title, description, image }
- *
- * Trainer creates a new forum post. The image URL is uploaded to Imgbb
- * by the Next.js server action BEFORE this endpoint is hit — we just
- * accept the resulting public URL here. Keeps Imgbb credentials off the
- * Express server entirely.
- */
 router.post("/", verifyToken, requireRole("trainer", "admin"), requireActiveUser, async (req, res) => {
     try {
         const { title, description, image } = req.body || {};
 
-        // Server-side guards — never trust the client
         const cleanTitle = String(title || "").trim();
         const cleanDesc = String(description || "").trim();
         const cleanImage = String(image || "").trim();
@@ -259,7 +244,6 @@ router.delete("/:id",verifyToken, requireActiveUser, async (req, res) => {
             return res.status(404).json({ ok: false, error: "Post not found" });
         }
 
-        // Authorization: owner OR admin
         const isOwner = String(post.authorId) === req.user.id;
         const isAdmin = req.user.role === "admin";
         if (!isOwner && !isAdmin) {
@@ -268,13 +252,11 @@ router.delete("/:id",verifyToken, requireActiveUser, async (req, res) => {
 
         const postObjectId = post._id;
 
-        // Cascade — votes and comments delete in parallel (independent ops)
         const [votesResult, commentsResult] = await Promise.all([
             PostVote.deleteMany({ postId: postObjectId }),
             Comment.deleteMany({ postId: postObjectId }),
         ]);
 
-        // Then the post itself
         await ForumPost.deleteOne({ _id: postObjectId });
 
         return res.json({
@@ -338,6 +320,5 @@ router.get("/", verifyToken, requireRole("admin"), async (req, res) => {
         return res.status(500).json({ ok: false, error: "Failed to load posts" });
     }
 });
-
 
 export default router;

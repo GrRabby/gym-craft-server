@@ -6,19 +6,8 @@ import { verifyToken, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// Every bookings endpoint is auth-gated — these are per-user records
 router.use(verifyToken);
 
-/**
- * GET /api/bookings/me
- *
- * Returns the current user's paid bookings, joined to class + trainer data.
- * Sorted by most-recently-paid first. Used by the "Booked Classes" page on
- * the member dashboard.
- *
- * Aggregation rather than two queries to avoid N+1 — one DB round trip
- * returns everything the table needs.
- */
 router.get("/me",requireRole("member"), async (req, res) => {
     try {
         const userObjectId = new mongoose.Types.ObjectId(req.user.id);
@@ -27,7 +16,7 @@ router.get("/me",requireRole("member"), async (req, res) => {
             {
                 $match: {
                     userId: userObjectId,
-                    status: "paid",   // only show successfully paid bookings
+                    status: "paid",
                 }
             },
             {
@@ -82,12 +71,6 @@ router.get("/me",requireRole("member"), async (req, res) => {
     }
 });
 
-/**
- * GET /api/bookings/all (Admin only)
- *
- * Returns all paid bookings (Stripe transactions) across the platform.
- * Includes user email and class details.
- */
 router.get("/all", requireRole("admin"), async (req, res) => {
     try {
         const bookings = await Booking.aggregate([

@@ -8,8 +8,6 @@ const notificationSchema = new mongoose.Schema(
             required: true,
             index: true,
         },
-        // Freeform string — UI maps type → icon/color. Examples:
-        // "trainer_approved", "trainer_rejected", "trainer_demoted", "info"
         type: {
             type: String,
             required: true,
@@ -26,7 +24,6 @@ const notificationSchema = new mongoose.Schema(
             trim: true,
             maxlength: 1000,
         },
-        // Optional destination — clicking the notification navigates here
         link: {
             type: String,
             default: null,
@@ -41,7 +38,6 @@ const notificationSchema = new mongoose.Schema(
     { timestamps: true, collection: "notifications" }
 );
 
-// Compound index — used by the "fetch recent + count unread" path
 notificationSchema.index({ userId: 1, createdAt: -1 });
 
 export const Notification =

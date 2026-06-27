@@ -8,17 +8,8 @@ import { GymClass } from "../models/GymClasses.js";
 
 const router = express.Router();
 
-// Every favorites endpoint requires auth
 router.use(verifyToken);
 
-/**
- * POST /api/favorites
- * Body: { classId }
- *
- * Idempotent — upsert prevents duplicate rows. Returns the favorite
- * regardless of whether it was just created or already existed, so the
- * client can treat both cases as success.
- */
 router.post("/", requireActiveUser, async (req, res) => {
     try {
         const { classId } = req.body || {};
@@ -27,8 +18,6 @@ router.post("/", requireActiveUser, async (req, res) => {
             return res.status(400).json({ ok: false, error: "Invalid class ID" });
         }
 
-        // Verify the class actually exists and is approved — we don't want
-        // people favoriting pending/rejected classes via direct API calls
         const cls = await GymClass.findOne({ _id: classId, status: "approved" });
         if (!cls) {
             return res.status(404).json({ ok: false, error: "Class not found" });
@@ -50,10 +39,6 @@ router.post("/", requireActiveUser, async (req, res) => {
     }
 });
 
-/**
- * DELETE /api/favorites/:classId
- * Removes the favorite. Idempotent — returns 200 whether or not it existed.
- */
 router.delete("/:classId", requireActiveUser, async (req, res) => {
     try {
         const { classId } = req.params;
@@ -69,34 +54,30 @@ router.delete("/:classId", requireActiveUser, async (req, res) => {
     }
 });
 
-/**
- * GET /api/favorites/me
- *
- * Returns the current user's favorited classes, joined to approved
- * class data. Used by the dashboard "Favorite Classes" page (built later).
- * Approved-only — if a class is later unapproved or deleted, it silently
- * disappears from the user's list.
- */
-router.get("/me",requireRole('member'), async (req, res) => {
+router.get("/me", requireRole('member'), async (req, res) => {
     try {
         const userObjectId = new mongoose.Types.ObjectId(req.user.id);
 
         const favorites = await Favorite.aggregate([
             { $match: { userId: userObjectId } },
-            { $lookup: {
-                from: "classes",
-                localField: "classId",
-                foreignField: "_id",
-                as: "class",
-            }},
+            {
+                $lookup: {
+                    from: "classes",
+                    localField: "classId",
+                    foreignField: "_id",
+                    as: "class",
+                }
+            },
             { $unwind: "$class" },
             { $match: { "class.status": "approved" } },
-            { $lookup: {
-                from: "user",
-                localField: "class.trainerId",
-                foreignField: "_id",
-                as: "trainer",
-            }},
+            {
+                $lookup: {
+                    from: "user",
+                    localField: "class.trainerId",
+                    foreignField: "_id",
+                    as: "trainer",
+                }
+            },
             { $unwind: "$trainer" },
             { $sort: { createdAt: -1 } },
         ]);
@@ -106,18 +87,18 @@ router.get("/me",requireRole('member'), async (req, res) => {
                 id: String(f._id),
                 createdAt: f.createdAt,
                 class: {
-                    id:           String(f.class._id),
-                    title:        f.class.title,
-                    image:        f.class.image,
-                    category:     f.class.category,
-                    difficulty:   f.class.difficulty,
-                    duration:     f.class.duration,
-                    price:        f.class.price,
+                    id: String(f.class._id),
+                    title: f.class.title,
+                    image: f.class.image,
+                    category: f.class.category,
+                    difficulty: f.class.difficulty,
+                    duration: f.class.duration,
+                    price: f.class.price,
                     scheduleDays: f.class.scheduleDays,
                     scheduleTime: f.class.scheduleTime,
                     trainer: {
-                        id:    String(f.trainer._id),
-                        name:  f.trainer.name,
+                        id: String(f.trainer._id),
+                        name: f.trainer.name,
                         image: f.trainer.image,
                     },
                 },

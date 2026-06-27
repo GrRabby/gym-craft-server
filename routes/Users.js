@@ -52,7 +52,6 @@ router.patch("/:id/role", async (req, res) => {
             return res.status(400).json({ ok: false, error: "Invalid role" });
         }
 
-        // We need the previous role to know whether this is a trainer-demote
         const existing = await User.findById(req.params.id).lean();
         if (!existing) return res.status(404).json({ ok: false, error: "User not found" });
 
@@ -64,8 +63,6 @@ router.patch("/:id/role", async (req, res) => {
             { new: true }
         ).lean();
 
-        // If we just demoted a trainer back to member, clear their old approved
-        // application so they can reapply from scratch.
         if (previousRole === "trainer" && role === "member") {
             await TrainerApplication.deleteOne({ userId: req.params.id });
             await Notification.create({

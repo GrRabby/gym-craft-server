@@ -9,18 +9,6 @@ const router = express.Router();
 
 router.use(verifyToken, requireActiveUser);
 
-/**
- * POST /api/post-votes
- * Body: { postId, type: "like" | "dislike" }
- *
- * Handles all three cases atomically:
- *   - No existing vote → create new vote
- *   - Existing vote of SAME type → remove (toggle off)
- *   - Existing vote of OTHER type → switch
- *
- * Returns the fresh { likes, dislikes, userVote } so the client can
- * sync its optimistic UI with reality.
- */
 router.post("/", async (req, res) => {
     try {
         const { postId, type } = req.body || {};
@@ -35,8 +23,6 @@ router.post("/", async (req, res) => {
         const postObjectId = new mongoose.Types.ObjectId(postId);
         const userObjectId = new mongoose.Types.ObjectId(req.user.id);
 
-        // Verify post exists and is published — don't let users vote on
-        // flagged/removed posts even by guessing the ID
         const post = await ForumPost.findOne({
             _id: postObjectId,
             status: "published",
