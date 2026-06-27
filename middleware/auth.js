@@ -24,10 +24,8 @@ export async function verifyToken(req, res, next) {
     if (!token) {
         return res.status(401).json({ ok: false, error: "Not authenticated" });
     }
-
     try {
         const { payload } = await jwtVerify(token, JWKS);
-        // payload shape: { id, role, status, iat, exp, iss, aud, ... }
         req.user = payload;
         next();
     } catch (err) {

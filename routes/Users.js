@@ -2,6 +2,7 @@ import { Router } from "express";
 import { User } from "../models/User.js";
 import { requireRole, verifyToken } from "../middleware/auth.js";
 import { TrainerApplication } from "../models/TrainerApplication.js";
+import { Notification } from "../models/Notification.js";
 const router = Router();
 router.use(verifyToken, requireRole("admin"));
 router.get("/", async (req, res) => {
@@ -67,6 +68,13 @@ router.patch("/:id/role", async (req, res) => {
         // application so they can reapply from scratch.
         if (previousRole === "trainer" && role === "member") {
             await TrainerApplication.deleteOne({ userId: req.params.id });
+            await Notification.create({
+                userId: req.params.id,
+                type: "trainer_demoted",
+                title: "Role Changed",
+                message: "Your trainer role has been changed back to member. You can reapply at any time.",
+                link: "/dashboard/member/apply",
+            });
         }
 
         res.json({ ok: true, user: { ...updated, id: updated._id, _id: undefined } });

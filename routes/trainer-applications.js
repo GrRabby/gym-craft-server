@@ -3,17 +3,18 @@ import { TrainerApplication } from "../models/TrainerApplication.js";
 import { verifyToken, requireRole, requireActiveUser } from "../middleware/auth.js";
 import { User } from "../models/User.js";
 import mongoose from "mongoose";
+import { Notification } from "../models/Notification.js";
 
 const router = Router();
 
 const ALLOWED_SPECIALTIES = ["strength", "cardio", "hiit", "yoga", "pilates", "mobility"];
-const ALLOWED_STATUSES    = ["pending", "approved", "rejected"];
+const ALLOWED_STATUSES = ["pending", "approved", "rejected"];
 /**
  * GET /api/trainer-applications/me
  * Returns the current user's application (or null if none yet).
  * Open to any authenticated user — they need to see their own status.
  */
-router.get("/me", verifyToken,requireRole("member"), async (req, res) => {
+router.get("/me", verifyToken, requireRole("member"), async (req, res) => {
     try {
         const app = await TrainerApplication.findOne({ userId: req.user.id }).lean();
         if (!app) return res.json({ application: null });
@@ -141,30 +142,39 @@ router.patch("/:id/approve", verifyToken, requireRole("admin"), async (req, res)
     try {
         if (!mongoose.isValidObjectId(req.params.id))
             return res.status(400).json({ ok: false, error: "Invalid application id" });
- 
+
         const feedback = (req.body.feedback || "").trim() || null;
- 
+
         const app = await TrainerApplication.findById(req.params.id);
         if (!app) return res.status(404).json({ ok: false, error: "Application not found" });
         if (app.status !== "pending")
             return res.status(409).json({ ok: false, error: `Already ${app.status}` });
- 
+
         // 1) Update application
-        app.status     = "approved";
-        app.feedback   = feedback;
+        app.status = "approved";
+        app.feedback = feedback;
         app.reviewedBy = req.user.id;
         app.reviewedAt = new Date();
         await app.save();
         // 2) Promote user
         const role = await User.findByIdAndUpdate(app.userId, { role: "trainer", updatedAt: new Date() });
         const lean = app.toObject();
+        await Notification.create({
+            userId: app.userId,
+            type: "trainer_approved",
+            title: "Application Approved",
+            message: feedback?.trim()
+                ? feedback.trim()
+                : "Welcome to the GymCraft trainer team! You can now create and manage classes.",
+            link: "/dashboard/trainer",
+        });
         res.json({ ok: true, application: { ...lean, id: lean._id, _id: undefined } });
     } catch (err) {
         console.error("PATCH /approve failed:", err);
         res.status(500).json({ ok: false, error: "Failed to approve" });
     }
 });
- 
+
 /**
  * PATCH /api/trainer-applications/:id/reject
  * Body: { feedback: string }   ← required
@@ -175,22 +185,30 @@ router.patch("/:id/reject", verifyToken, requireRole("admin"), async (req, res) 
     try {
         if (!mongoose.isValidObjectId(req.params.id))
             return res.status(400).json({ ok: false, error: "Invalid application id" });
- 
+
         const rejectionReason = (req.body.feedback || "").trim();
         if (!rejectionReason)
             return res.status(400).json({ ok: false, error: "Feedback is required to reject." });
- 
+
         const app = await TrainerApplication.findById(req.params.id);
         if (!app) return res.status(404).json({ ok: false, error: "Application not found" });
         if (app.status !== "pending")
             return res.status(409).json({ ok: false, error: `Already ${app.status}` });
- 
-        app.status     = "rejected";
-        app.rejectionReason   = rejectionReason;
+
+        app.status = "rejected";
+        app.rejectionReason = rejectionReason;
         app.reviewedBy = req.user.id;
         app.reviewedAt = new Date();
         await app.save();
- 
+        await Notification.create({
+            userId: app.userId,
+            type: "trainer_rejected",
+            title: "Application Needs Revisions",
+            message: rejectionReason
+                ? rejectionReason
+                : "Your trainer application was not approved. Please review the feedback and reapply when ready.",
+            link: "/dashboard/member/apply",
+        });
         const lean = app.toObject();
         res.json({ ok: true, application: { ...lean, id: lean._id, _id: undefined } });
     } catch (err) {

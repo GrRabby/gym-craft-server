@@ -12,6 +12,7 @@ import forumPostsRouter from "./routes/forum-posts.js";
 import adminRouter from "./routes/admin.js";
 import postVotesRouter from "./routes/post-votes.js";
 import commentsRouter from "./routes/comments.js";
+import notificationsRouter from "./routes/notifications.js";
 const app = express();
 
 app.use(cors());
@@ -28,6 +29,7 @@ app.use("/api/forum-posts", forumPostsRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/post-votes", postVotesRouter);
 app.use("/api/comments", commentsRouter);
+app.use("/api/notifications", notificationsRouter);
 const PORT = process.env.PORT || 5000;
 
 mongoose

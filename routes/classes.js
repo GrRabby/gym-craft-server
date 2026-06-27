@@ -16,6 +16,81 @@ const STATUSES = ["pending", "approved", "rejected"];
  * Trainer creates a class. Defaults to status: "pending" — admin must approve.
  * Image upload happens on the Next.js side first; this route just stores the URL.
  */
+router.get("/public/featured", async (req, res) => {
+    try {
+        const limit = Math.min(12, Math.max(1, parseInt(req.query.limit) || 6));
+
+        const classes = await GymClass.aggregate([
+            { $match: { status: "approved" } },
+
+            // Subquery: count paid bookings per class
+            { $lookup: {
+                from: "bookings",
+                let: { classId: "$_id" },
+                pipeline: [
+                    { $match: { $expr: { $and: [
+                        { $eq: ["$classId", "$$classId"] },
+                        { $eq: ["$status", "paid"] },
+                    ]}}},
+                    { $count: "count" },
+                ],
+                as: "bookingStats",
+            }},
+            { $addFields: {
+                bookingCount: {
+                    $ifNull: [{ $arrayElemAt: ["$bookingStats.count", 0] }, 0],
+                },
+            }},
+
+            // Rank: most-booked first, newest as tiebreaker
+            { $sort: { bookingCount: -1, createdAt: -1 } },
+            { $limit: limit },
+
+            // Attach trainer info
+            { $lookup: {
+                from: "user",
+                localField: "trainerId",
+                foreignField: "_id",
+                as: "trainer",
+            }},
+            { $unwind: "$trainer" },
+
+            { $project: {
+                title: 1,
+                category: 1,
+                duration: 1,
+                price: 1,
+                difficulty: 1,
+                image: 1,
+                bookingCount: 1,
+                "trainer._id":   1,
+                "trainer.name":  1,
+                "trainer.image": 1,
+            }},
+        ]);
+
+        return res.json({
+            classes: classes.map((c) => ({
+                id:           String(c._id),
+                title:        c.title,
+                category:     c.category,
+                duration:     c.duration,
+                price:        c.price,
+                difficulty:   c.difficulty,
+                image:        c.image,
+                bookingCount: c.bookingCount,
+                trainer: {
+                    id:    String(c.trainer._id),
+                    name:  c.trainer.name,
+                    image: c.trainer.image,
+                },
+            })),
+        });
+    } catch (err) {
+        console.error("GET /api/classes/public/featured failed:", err);
+        return res.status(500).json({ ok: false, error: "Failed to load featured classes" });
+    }
+});
 router.post("/", verifyToken, requireRole("trainer"), requireActiveUser, async (req, res) => {
     try {
         const {

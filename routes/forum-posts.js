@@ -12,42 +12,74 @@ import { Comment } from "../models/Comment.js";
 
 const router = express.Router();
 
-
+function escapeRegex(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 router.get("/public", async (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page) || 1);
         const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 12));
         const skip = (page - 1) * limit;
-        const [posts, total] = await Promise.all([
-            ForumPost.aggregate([
-                { $match: { status: "published" } },
-                { $sort: { createdAt: -1 } },
-                { $skip: skip },
-                { $limit: limit },
-                {
-                    $lookup: {
-                        from: "user",
-                        localField: "authorId",
-                        foreignField: "_id",
-                        as: "author",
-                    }
-                },
-                { $unwind: "$author" },
-                {
-                    $project: {
-                        title: 1,
-                        description: 1,
-                        image: 1,
-                        createdAt: 1,
-                        "author._id": 1,
-                        "author.name": 1,
-                        "author.image": 1,
-                        "author.role": 1,
-                    }
-                },
-            ]),
-            ForumPost.countDocuments({ status: "published" }),
-        ]);
+        const search = String(req.query.search || "").trim();
+
+        // Build the optional search-match stage. Without a search query,
+        // this stage is skipped entirely.
+        const searchMatch = search
+            ? {
+                $or: [
+                    { title: { $regex: escapeRegex(search), $options: "i" } },
+                    { description: { $regex: escapeRegex(search), $options: "i" } },
+                    { "author.name": { $regex: escapeRegex(search), $options: "i" } },
+                ],
+            }
+            : null;
+
+        const pipeline = [
+            { $match: { status: "published" } },
+            {
+                $lookup: {
+                    from: "user",
+                    localField: "authorId",
+                    foreignField: "_id",
+                    as: "author",
+                }
+            },
+            { $unwind: "$author" },
+        ];
+
+        if (searchMatch) {
+            pipeline.push({ $match: searchMatch });
+        }
+
+        // $facet runs two sub-pipelines on the same input:
+        //   data — the page of results (sorted, paginated, projected)
+        //   meta — just the count
+        pipeline.push({
+            $facet: {
+                data: [
+                    { $sort: { createdAt: -1 } },
+                    { $skip: skip },
+                    { $limit: limit },
+                    {
+                        $project: {
+                            title: 1,
+                            description: 1,
+                            image: 1,
+                            createdAt: 1,
+                            "author._id": 1,
+                            "author.name": 1,
+                            "author.image": 1,
+                            "author.role": 1,
+                        }
+                    },
+                ],
+                meta: [{ $count: "total" }],
+            },
+        });
+
+        const [result] = await ForumPost.aggregate(pipeline);
+        const posts = result?.data || [];
+        const total = result?.meta?.[0]?.total || 0;
 
         return res.json({
             posts: posts.map((p) => ({
@@ -67,9 +99,34 @@ router.get("/public", async (req, res) => {
             limit,
             total,
             totalPages: Math.max(1, Math.ceil(total / limit)),
+            search,  // echo back so the client can confirm what was applied
         });
     } catch (err) {
         console.error("GET /api/forum-posts/public failed:", err);
+        return res.status(500).json({ ok: false, error: "Failed to load posts" });
+    }
+});
+router.get("/me", verifyToken, requireRole("trainer"), requireActiveUser, async (req, res) => {
+    try {
+        const userObjectId = new mongoose.Types.ObjectId(req.user.id);
+        const posts = await ForumPost
+            .find({ authorId: userObjectId })
+            .sort({ createdAt: -1 })
+            .lean();
+
+        return res.json({
+            posts: posts.map((p) => ({
+                id: String(p._id),
+                title: p.title,
+                description: p.description,
+                image: p.image,
+                status: p.status,
+                createdAt: p.createdAt,
+                updatedAt: p.updatedAt,
+            })),
+        });
+    } catch (err) {
+        console.error("GET /api/forum-posts/me failed:", err);
         return res.status(500).json({ ok: false, error: "Failed to load posts" });
     }
 });
@@ -141,7 +198,7 @@ router.get("/:id", verifyToken, requireActiveUser, async (req, res) => {
  * accept the resulting public URL here. Keeps Imgbb credentials off the
  * Express server entirely.
  */
-router.post("/", verifyToken,requireRole("trainer", "admin"), requireActiveUser, async (req, res) => {
+router.post("/", verifyToken, requireRole("trainer", "admin"), requireActiveUser, async (req, res) => {
     try {
         const { title, description, image } = req.body || {};
 
@@ -188,32 +245,8 @@ router.post("/", verifyToken,requireRole("trainer", "admin"), requireActiveUser,
         return res.status(500).json({ ok: false, error: "Failed to create post" });
     }
 });
-router.get("/me", verifyToken, requireRole("trainer"), requireActiveUser, async (req, res) => {
-    try {
-        const userObjectId = new mongoose.Types.ObjectId(req.user.id);
 
-        const posts = await ForumPost
-            .find({ authorId: userObjectId })
-            .sort({ createdAt: -1 })
-            .lean();
-
-        return res.json({
-            posts: posts.map((p) => ({
-                id: String(p._id),
-                title: p.title,
-                description: p.description,
-                image: p.image,
-                status: p.status,
-                createdAt: p.createdAt,
-                updatedAt: p.updatedAt,
-            })),
-        });
-    } catch (err) {
-        console.error("GET /api/forum-posts/me failed:", err);
-        return res.status(500).json({ ok: false, error: "Failed to load posts" });
-    }
-});
-router.delete("/:id", verifyToken, requireActiveUser, async (req, res) => {
+router.delete("/:id",verifyToken, requireActiveUser, async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -233,14 +266,28 @@ router.delete("/:id", verifyToken, requireActiveUser, async (req, res) => {
             return res.status(403).json({ ok: false, error: "Not authorized to delete this post" });
         }
 
-        await ForumPost.deleteOne({ _id: id });
-        return res.json({ ok: true });
+        const postObjectId = post._id;
+
+        // Cascade — votes and comments delete in parallel (independent ops)
+        const [votesResult, commentsResult] = await Promise.all([
+            PostVote.deleteMany({ postId: postObjectId }),
+            Comment.deleteMany({ postId: postObjectId }),
+        ]);
+
+        // Then the post itself
+        await ForumPost.deleteOne({ _id: postObjectId });
+
+        return res.json({
+            ok: true,
+            deletedVotes:    votesResult.deletedCount    || 0,
+            deletedComments: commentsResult.deletedCount || 0,
+        });
     } catch (err) {
         console.error("DELETE /api/forum-posts/:id failed:", err);
         return res.status(500).json({ ok: false, error: "Failed to delete post" });
     }
 });
-router.get("/", verifyToken , requireRole("admin"), async (req, res) => {
+router.get("/", verifyToken, requireRole("admin"), async (req, res) => {
     try {
         const posts = await ForumPost.aggregate([
             { $sort: { createdAt: -1 } },
