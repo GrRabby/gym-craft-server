@@ -21,7 +21,7 @@ router.use(verifyToken);
  * accept the resulting public URL here. Keeps Imgbb credentials off the
  * Express server entirely.
  */
-router.post("/", requireRole("trainer"), requireActiveUser, async (req, res) => {
+router.post("/", requireRole("trainer", "admin"), requireActiveUser, async (req, res) => {
     try {
         const { title, description, image } = req.body || {};
 
@@ -118,6 +118,53 @@ router.delete("/:id", requireActiveUser, async (req, res) => {
     } catch (err) {
         console.error("DELETE /api/forum-posts/:id failed:", err);
         return res.status(500).json({ ok: false, error: "Failed to delete post" });
+    }
+});
+router.get("/", requireRole("admin"), async (req, res) => {
+    try {
+        const posts = await ForumPost.aggregate([
+            { $sort: { createdAt: -1 } },
+            { $lookup: {
+                from: "user",
+                localField: "authorId",
+                foreignField: "_id",
+                as: "author",
+            }},
+            { $unwind: "$author" },
+            { $project: {
+                title: 1,
+                description: 1,
+                image: 1,
+                status: 1,
+                createdAt: 1,
+                "author._id":   1,
+                "author.name":  1,
+                "author.email": 1,
+                "author.image": 1,
+                "author.role":  1,
+            }},
+        ]);
+ 
+        return res.json({
+            posts: posts.map((p) => ({
+                id:          String(p._id),
+                title:       p.title,
+                description: p.description,
+                image:       p.image,
+                status:      p.status,
+                createdAt:   p.createdAt,
+                author: {
+                    id:    String(p.author._id),
+                    name:  p.author.name,
+                    email: p.author.email,
+                    image: p.author.image,
+                    role:  p.author.role,
+                },
+            })),
+        });
+    } catch (err) {
+        console.error("GET /api/forum-posts failed:", err);
+        return res.status(500).json({ ok: false, error: "Failed to load posts" });
     }
 });
 export default router;
