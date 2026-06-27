@@ -614,4 +614,37 @@ router.get("/:id", verifyToken, async (req, res) => {
         return res.status(500).json({ ok: false, error: "Failed to load class" });
     }
 });
+router.get("/stats/me", verifyToken, requireRole("trainer"), async (req, res) => {
+    try {
+        const userObjectId = new mongoose.Types.ObjectId(req.user.id);
+ 
+        // 1) Fetch only the IDs of this trainer's classes
+        const trainerClasses = await GymClass
+            .find({ trainerId: userObjectId })
+            .select("_id")
+            .lean();
+ 
+        const classIds = trainerClasses.map((c) => c._id);
+ 
+        // 2) Count paid bookings across those classes (skip if no classes)
+        const studentsCount = classIds.length > 0
+            ? await Booking.countDocuments({
+                classId: { $in: classIds },
+                status: "paid",
+            })
+            : 0;
+ 
+        return res.json({
+            ok: true,
+            classesCount:  trainerClasses.length,
+            studentsCount,
+        });
+    } catch (err) {
+        console.error("GET /api/classes/stats/me failed:", err);
+        return res.status(500).json({
+            ok: false,
+            error: "Failed to load stats",
+        });
+    }
+});
 export default router;
