@@ -125,7 +125,7 @@ router.get("/me", verifyToken, requireRole("trainer"), requireActiveUser, async 
         return res.status(500).json({ ok: false, error: "Failed to load posts" });
     }
 });
-router.get("/:id", verifyToken, requireActiveUser, async (req, res) => {
+router.get("/:id", verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
         if (!mongoose.isValidObjectId(id)) {
