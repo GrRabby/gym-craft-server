@@ -44,7 +44,6 @@ router.patch("/:id/status", async (req, res) => {
     }
 });
 
-
 router.patch("/:id/role", async (req, res) => {
     try {
         const { role } = req.body;
